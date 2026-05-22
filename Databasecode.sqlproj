@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.Build.Sql/1.0.0">
+  <PropertyGroup>
+    <Name>Databasecode</Name>
+    <ProjectGuid>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</ProjectGuid>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033, CI</ModelCollation>
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+    <DefaultFileStructure>BySchemaAndSchemaType</DefaultFileStructure>
+  </PropertyGroup>
+</Project>
