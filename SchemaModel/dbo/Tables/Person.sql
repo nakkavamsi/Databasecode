@@ -14,9 +14,11 @@ CREATE TABLE [dbo].[Person] (
     CONSTRAINT [UQ_Person_Email] UNIQUE ([Email]),
     CONSTRAINT [CK_Person_Name] CHECK ([Name] <> '')
 );
+GO
 
 CREATE NONCLUSTERED INDEX [IX_Person_Email]
     ON [dbo].[Person]([Email] ASC);
+GO
 
 CREATE STATISTICS [STAT_Person_Phone]
     ON [dbo].[Person]([Phone]);

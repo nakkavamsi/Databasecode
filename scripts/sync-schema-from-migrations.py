@@ -419,7 +419,8 @@ class TableModel:
         )
         if not trailing:
             return create_table
-        return f"{create_table}\n\n" + "\n\n".join(trailing)
+        # SSDT requires GO between statements in a single table script file.
+        return create_table + "\nGO\n\n" + "\nGO\n\n".join(trailing)
 
 
 def parse_semver_folder(name: str) -> tuple[int, int, int] | None:

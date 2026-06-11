@@ -10,6 +10,7 @@ CREATE TABLE [play].[Game] (
     CONSTRAINT [UQ_Game_Name] UNIQUE ([Name]),
     CONSTRAINT [CK_Game_Name] CHECK ([Name] <> N'')
 );
+GO
 
 CREATE NONCLUSTERED INDEX [IX_Game_Name]
     ON [play].[Game]([Name] ASC)
