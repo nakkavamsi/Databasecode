@@ -31,9 +31,9 @@ Supported in each migration file:
 Later migration versions overwrite earlier definitions for the same object.
 ALTER TABLE changes are applied incrementally to the accumulated table model.
 
-Generated SchemaModel scripts use CREATE OR ALTER for procedures, views,
-functions, triggers, and types. Tables, indexes, statistics, schemas, roles,
-and synonyms use IF NOT EXISTS / IS NULL guards (CREATE OR ALTER is not supported).
+Generated SchemaModel scripts are plain declarative CREATE statements for SSDT
+dacpac build. Migrations may use CREATE OR ALTER and IF guards; those are
+stripped or unwrapped during sync.
 """
 
 from __future__ import annotations
@@ -60,11 +60,6 @@ CREATE_PATTERN = re.compile(
 
 CREATE_SYNONYM_PATTERN = re.compile(
     r"\bCREATE\s+SYNONYM\s+",
-    re.IGNORECASE,
-)
-
-CREATE_SYNONYM_OBJECT_PATTERN = re.compile(
-    r"CREATE\s+SYNONYM\s+(\[(?:[^\]]+)\]|(?:\w+))\.(\[(?:[^\]]+)\]|(?:\w+))",
     re.IGNORECASE,
 )
 
@@ -646,125 +641,21 @@ def normalize_for_declarative_model(sql: str) -> str:
     return "\n".join(normalized_lines).strip()
 
 
-def indent_sql(sql: str, spaces: int = 4) -> str:
-    pad = " " * spaces
-    return "\n".join(f"{pad}{line}" if line.strip() else line for line in sql.splitlines())
-
-
-def wrap_begin_end(condition: str, body: str) -> str:
-    return f"{condition}\nBEGIN\n{indent_sql(body)}\nEND;"
-
-
-def is_already_guarded(sql: str) -> bool:
-    return bool(
-        re.match(
-            r"IF\s+(?:NOT\s+EXISTS\s*\(|OBJECT_ID|SCHEMA_ID|DATABASE_PRINCIPAL_ID|TYPE_ID)\b",
-            sql.strip(),
-            re.IGNORECASE,
-        )
-    )
-
-
-def qualified_two_part_name(schema: str, name: str) -> str:
-    return f"[{strip_brackets(schema)}].[{strip_brackets(name)}]"
-
-
-def apply_create_or_alter(sql: str) -> str:
-    sql = sql.strip()
-    if re.match(r"CREATE\s+OR\s+ALTER\s+", sql, re.IGNORECASE):
-        return sql
-    return re.sub(
-        r"^CREATE\s+(PROCEDURE|VIEW|FUNCTION|TRIGGER|TYPE)\s+",
-        r"CREATE OR ALTER \1 ",
-        sql,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-
-
-def wrap_statement_for_schema_model(sql: str) -> str:
-    sql = sql.strip()
-    if not sql or is_already_guarded(sql):
-        return sql
-
-    table_match = CREATE_TABLE_HEADER_PATTERN.search(sql)
-    if table_match:
-        qualified = qualified_two_part_name(table_match.group(1), table_match.group(2))
-        return wrap_begin_end(f"IF OBJECT_ID(N'{qualified}', N'U') IS NULL", sql)
-
-    index_target = parse_create_index_target(sql)
-    if index_target:
-        index_name, schema_name, table_name = index_target
-        qualified = qualified_two_part_name(schema_name, table_name)
-        condition = (
-            "IF NOT EXISTS (\n"
-            "    SELECT 1\n"
-            "    FROM sys.indexes\n"
-            f"    WHERE [name] = N'{index_name}'\n"
-            f"      AND [object_id] = OBJECT_ID(N'{qualified}')\n"
-            ")"
-        )
-        return wrap_begin_end(condition, sql)
-
-    statistic_target = parse_create_statistics_target(sql)
-    if statistic_target:
-        statistic_name, schema_name, table_name = statistic_target
-        qualified = qualified_two_part_name(schema_name, table_name)
-        condition = (
-            "IF NOT EXISTS (\n"
-            "    SELECT 1\n"
-            "    FROM sys.stats\n"
-            f"    WHERE [name] = N'{statistic_name}'\n"
-            f"      AND [object_id] = OBJECT_ID(N'{qualified}')\n"
-            ")"
-        )
-        return wrap_begin_end(condition, sql)
-
-    schema_match = CREATE_SCHEMA_PATTERN.search(sql)
-    if schema_match:
-        schema_name = strip_brackets(schema_match.group(1))
-        statement = sql if sql.rstrip().endswith(";") else f"{sql};"
-        escaped = statement.replace("'", "''")
-        return wrap_begin_end(
-            f"IF SCHEMA_ID(N'{schema_name}') IS NULL",
-            f"EXEC(N'{escaped}');",
-        )
-
-    role_match = CREATE_ROLE_PATTERN.search(sql)
-    if role_match:
-        role_name = strip_brackets(role_match.group(1))
-        return wrap_begin_end(f"IF DATABASE_PRINCIPAL_ID(N'{role_name}') IS NULL", sql)
-
-    type_match = CREATE_TYPE_HEADER_PATTERN.search(sql)
-    if type_match:
-        return apply_create_or_alter(sql)
-
-    synonym_match = CREATE_SYNONYM_OBJECT_PATTERN.search(sql)
-    if synonym_match:
-        qualified = qualified_two_part_name(synonym_match.group(1), synonym_match.group(2))
-        return wrap_begin_end(f"IF OBJECT_ID(N'{qualified}', N'SN') IS NULL", sql)
-
-    routine_match = CREATE_PATTERN.search(sql)
-    if routine_match:
-        return apply_create_or_alter(sql)
-
-    return sql
-
-
 def prepare_schema_model_sql(sql: str) -> str:
+    """Convert migration SQL into SSDT-compatible declarative CREATE scripts."""
     normalized = normalize_for_declarative_model(sql)
     if not normalized:
         return ""
 
     batches = re.split(r"^\s*GO\s*$", normalized, flags=re.MULTILINE | re.IGNORECASE)
-    wrapped_batches = [
-        wrap_statement_for_schema_model(batch.strip())
+    declarative_batches = [
+        normalize_for_declarative_model(batch.strip())
         for batch in batches
         if batch.strip()
     ]
-    if not wrapped_batches:
+    if not declarative_batches:
         return ""
-    return "\nGO\n\n".join(wrapped_batches)
+    return "\nGO\n\n".join(declarative_batches)
 
 
 def unwrap_exec(content: str) -> str:
