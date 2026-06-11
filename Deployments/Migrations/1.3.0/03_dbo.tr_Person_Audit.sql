@@ -1,0 +1,7 @@
+CREATE OR ALTER TRIGGER [dbo].[tr_Person_Audit]
+ON [dbo].[Person]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+END;

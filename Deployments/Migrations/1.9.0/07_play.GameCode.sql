@@ -1,0 +1,2 @@
+CREATE OR ALTER TYPE [play].[GameCode]
+    FROM NVARCHAR (20) NOT NULL;

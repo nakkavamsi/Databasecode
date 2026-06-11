@@ -1,0 +1,2 @@
+CREATE OR ALTER TYPE [svc].[EmailAddress]
+    FROM NVARCHAR (256) NULL;

@@ -1,0 +1,7 @@
+CREATE OR ALTER TRIGGER [play].[tr_Game_Audit]
+ON [play].[Game]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+END;

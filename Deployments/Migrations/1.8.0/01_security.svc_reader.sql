@@ -1,0 +1,4 @@
+IF DATABASE_PRINCIPAL_ID(N'svc_reader') IS NULL
+BEGIN
+    CREATE ROLE [svc_reader] AUTHORIZATION [dbo];
+END;
