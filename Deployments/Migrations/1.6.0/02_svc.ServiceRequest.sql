@@ -1,3 +1,6 @@
+-- Migration-Id: 20260612062008_0ba532cf
+-- Migration-Version: 1.6.0
+-- Created-Utc: 2026-06-12T06:20:08Z
 IF OBJECT_ID(N'[svc].[ServiceRequest]', N'U') IS NULL
 BEGIN
     CREATE TABLE [svc].[ServiceRequest] (
