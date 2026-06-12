@@ -179,12 +179,10 @@ Prefix pattern examples:
 
 ### Unique Migration-Id (automatic)
 
-Each migration script can carry a globally unique id in the file header:
+Each migration script carries a globally unique id in the file header:
 
 ```sql
 -- Migration-Id: 20260522143000_a3f9b2c1
--- Migration-Version: 2.2.0
--- Created-Utc: 2026-05-22T14:30:00Z
 ```
 
 The sync script ignores these comment headers; they are for traceability, auditing, and deployment tooling.
@@ -236,6 +234,9 @@ python3 scripts/stamp-migration-id.py Deployments/Migrations/2.2.0/01_dbo.person
 
 # All migrations missing an id
 python3 scripts/stamp-migration-id.py --all
+
+# Normalize headers to Migration-Id only
+python3 scripts/stamp-migration-id.py --all --refresh
 ```
 
 **Id format:** `YYYYMMDDHHMMSS_<8-hex>` (UTC timestamp + random suffix).

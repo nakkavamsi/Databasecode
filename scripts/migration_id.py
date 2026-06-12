@@ -13,11 +13,6 @@ MIGRATION_ID_HEADER = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-MIGRATION_VERSION_HEADER = re.compile(
-    r"^--\s*Migration-Version:\s*(\S+)\s*$",
-    re.IGNORECASE | re.MULTILINE,
-)
-
 SEMVER_FOLDER_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
@@ -33,16 +28,8 @@ def parse_version_from_path(path: Path) -> str | None:
     return None
 
 
-def build_migration_header(migration_id: str, version: str | None = None) -> str:
-    created_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    lines = [
-        f"-- Migration-Id: {migration_id}",
-    ]
-    if version:
-        lines.append(f"-- Migration-Version: {version}")
-    lines.append(f"-- Created-Utc: {created_utc}")
-    lines.append("")
-    return "\n".join(lines)
+def build_migration_header(migration_id: str) -> str:
+    return f"-- Migration-Id: {migration_id}\n\n"
 
 
 def has_migration_id(content: str) -> bool:
@@ -55,7 +42,7 @@ def extract_migration_id(content: str) -> str | None:
 
 
 def strip_existing_migration_header(content: str) -> str:
-    """Remove auto migration header block at top of file if present."""
+    """Remove migration header block at top of file if present."""
     lines = content.splitlines()
     index = 0
     while index < len(lines):
@@ -63,7 +50,11 @@ def strip_existing_migration_header(content: str) -> str:
         if not line:
             index += 1
             continue
-        if line.startswith("-- Migration-") or line.startswith("-- Created-Utc:"):
+        if (
+            line.startswith("-- Migration-Id:")
+            or line.startswith("-- Migration-Version:")
+            or line.startswith("-- Created-Utc:")
+        ):
             index += 1
             continue
         break
@@ -72,9 +63,9 @@ def strip_existing_migration_header(content: str) -> str:
     return "\n".join(lines[index:]).strip()
 
 
-def prepend_migration_header(content: str, migration_id: str, version: str | None) -> str:
+def prepend_migration_header(content: str, migration_id: str) -> str:
     body = strip_existing_migration_header(content)
-    header = build_migration_header(migration_id, version)
+    header = build_migration_header(migration_id)
     if not body:
         return header.rstrip() + "\n"
     return header + body + ("\n" if not body.endswith("\n") else "")

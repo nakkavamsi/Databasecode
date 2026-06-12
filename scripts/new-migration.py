@@ -97,7 +97,7 @@ def main() -> int:
     if not body.endswith("\n"):
         body += "\n"
 
-    header = build_migration_header(migration_id, args.version)
+    header = build_migration_header(migration_id)
     content = header + body
 
     if args.dry_run:

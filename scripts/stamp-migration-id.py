@@ -22,7 +22,6 @@ from migration_id import (
     extract_migration_id,
     generate_migration_id,
     has_migration_id,
-    parse_version_from_path,
     prepend_migration_header,
 )
 
@@ -52,6 +51,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only print when a file is changed",
     )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Rewrite headers to Migration-Id only (removes version/created lines)",
+    )
     return parser.parse_args()
 
 
@@ -72,10 +76,31 @@ def stamp_file(path: Path, quiet: bool = False) -> bool:
         return False
 
     migration_id = generate_migration_id()
-    version = parse_version_from_path(path)
-    updated = prepend_migration_header(content, migration_id, version)
+    updated = prepend_migration_header(content, migration_id)
     path.write_text(updated, encoding="utf-8")
     print(f"Stamped: {path} -> Migration-Id: {migration_id}")
+    return True
+
+
+def refresh_file(path: Path, quiet: bool = False) -> bool:
+    if not path.is_file():
+        return False
+
+    content = path.read_text(encoding="utf-8")
+    migration_id = extract_migration_id(content)
+    if not migration_id:
+        if not quiet:
+            print(f"Skip (no Migration-Id): {path}")
+        return False
+
+    updated = prepend_migration_header(content, migration_id)
+    if updated == content:
+        if not quiet:
+            print(f"Skip (already normalized): {path}")
+        return False
+
+    path.write_text(updated, encoding="utf-8")
+    print(f"Refreshed: {path}")
     return True
 
 
@@ -101,11 +126,15 @@ def main() -> int:
             if not args.quiet:
                 print(f"Skip (not a migration path): {path}")
             continue
-        if stamp_file(path, quiet=args.quiet):
+        if args.refresh:
+            if refresh_file(path, quiet=args.quiet):
+                changed += 1
+        elif stamp_file(path, quiet=args.quiet):
             changed += 1
 
     if not args.quiet:
-        print(f"Done. {changed} file(s) stamped.")
+        action = "refreshed" if args.refresh else "stamped"
+        print(f"Done. {changed} file(s) {action}.")
     return 0
 
 

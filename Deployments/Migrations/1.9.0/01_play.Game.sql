@@ -1,6 +1,5 @@
 -- Migration-Id: 20260612062008_0edc67bd
--- Migration-Version: 1.9.0
--- Created-Utc: 2026-06-12T06:20:08Z
+
 IF OBJECT_ID(N'[play].[Game]', N'U') IS NULL
 BEGIN
     CREATE TABLE [play].[Game] (
