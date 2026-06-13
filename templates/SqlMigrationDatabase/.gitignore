@@ -1,12 +1,8 @@
 bin/
 obj/
-extensions/**/bin/
-extensions/**/obj/
 *.user
 *.jfm
 *.dbmdl
 *.dacpac
 *.publish.xml
 .vs/
-__pycache__/
-*.pyc

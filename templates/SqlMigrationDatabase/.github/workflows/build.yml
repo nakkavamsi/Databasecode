@@ -1,0 +1,40 @@
+name: Build Database Project
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.406"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Sync schema from migrations
+        run: python3 scripts/sync-schema-from-migrations.py
+
+      - name: Build SQL project
+        run: dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
+
+      - name: Upload dacpac artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Databasecode-dacpac
+          path: bin/Release/*.dacpac
+          if-no-files-found: error

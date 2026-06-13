@@ -1,0 +1,49 @@
+name: Build VSIX Extension
+
+on:
+  push:
+    branches:
+      - main
+      - nvkdbchanges
+    paths:
+      - templates/**
+      - extensions/**
+      - scripts/pack-vsix-template.py
+  pull_request:
+    branches:
+      - main
+      - nvkdbchanges
+    paths:
+      - templates/**
+      - extensions/**
+      - scripts/pack-vsix-template.py
+  workflow_dispatch:
+
+jobs:
+  build-vsix:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Pack VSIX template
+        run: python scripts/pack-vsix-template.py
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build VSIX
+        run: msbuild extensions/SqlMigrationDatabaseVsix.sln /p:Configuration=Release /restore
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: SqlMigrationDatabaseVsix
+          path: extensions/SqlMigrationDatabaseVsix/bin/Release/*.vsix
+          if-no-files-found: error

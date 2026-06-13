@@ -216,9 +216,13 @@ Preview without writing:
 python3 scripts/new-migration.py --version 2.2.0 --name dbo.person.add_status --dry-run
 ```
 
-#### Option 2 — Cursor hook (automatic on save)
+#### Option 2 — Automatic on build/sync
 
-Project hook `.cursor/hooks.json` runs `stamp-migration-id.sh` after file edits. When you create or save any `Deployments/Migrations/*/*.sql` file that is missing a header, it is stamped with a new `Migration-Id`.
+Every `dotnet build` and `python3 scripts/sync-schema-from-migrations.py` run stamps any migration file under `Deployments/Migrations/` that is still missing a `Migration-Id`. This covers files you create manually in the IDE.
+
+#### Option 3 — Cursor hook (Agent edits only)
+
+Project hook `.cursor/hooks.json` runs `stamp-migration-id.sh` after **Agent** file edits (`Write` / `TabWrite`). It does **not** run when you type and save a file yourself — use Option 1, 2, or 4 for manual files.
 
 Make the hook executable once:
 
@@ -226,7 +230,7 @@ Make the hook executable once:
 chmod +x .cursor/hooks/stamp-migration-id.sh
 ```
 
-#### Option 3 — Stamp existing files
+#### Option 4 — Stamp manually
 
 ```bash
 # One file
@@ -674,6 +678,37 @@ brew install dotnet@8
 ```
 
 Or download from https://dotnet.microsoft.com/download
+
+---
+
+## Reuse as a template for new database repos
+
+This repository includes a **dotnet / Visual Studio 2022** project template.
+
+```bash
+# One-time install (from this repo)
+dotnet new install ./templates/SqlMigrationDatabase
+
+# Create a new database repo
+dotnet new sql-migration-db -n MyNewDb -o ../MyNewDb
+```
+
+In **Visual Studio 2022**: restart VS after install, then **Create a new project** → search **SQL Server Database (Migration-Driven)**.
+
+Full instructions: [templates/README.md](templates/README.md)
+
+### Visual Studio VSIX extension
+
+Build and install a **Visual Studio 2022** extension that adds the template to **File → New → Project**:
+
+```powershell
+# Windows + Visual Studio 2022
+python scripts\pack-vsix-template.py
+msbuild extensions\SqlMigrationDatabaseVsix.sln /p:Configuration=Release
+# Install: extensions\SqlMigrationDatabaseVsix\bin\Release\SqlMigrationDatabaseVsix.vsix
+```
+
+Details: [extensions/README.md](extensions/README.md)
 
 ---
 

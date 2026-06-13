@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.Build.Sql/2.2.0">
+  <PropertyGroup>
+    <Name>$safeprojectname$</Name>
+    <ProjectGuid>{$guid1$}</ProjectGuid>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033, CI</ModelCollation>
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+    <DefaultFileStructure>BySchemaAndSchemaType</DefaultFileStructure>
+  </PropertyGroup>
+
+  <!-- Deployments/Migrations are the source of truth; SchemaModel/ is generated before build -->
+  <Target Name="SyncSchemaFromMigrations" BeforeTargets="Build">
+    <Exec
+      Command="python3 &quot;$(MSBuildProjectDirectory)/scripts/sync-schema-from-migrations.py&quot;"
+      Condition="'$(OS)' != 'Windows_NT'" />
+    <Exec
+      Command="python &quot;$(MSBuildProjectDirectory)/scripts/sync-schema-from-migrations.py&quot;"
+      Condition="'$(OS)' == 'Windows_NT'" />
+  </Target>
+
+  <!-- Deployments scripts are not compiled into the dacpac -->
+  <ItemGroup>
+    <Build Remove="Deployments/Migrations/**/*.sql" />
+    <Build Remove="Deployments/Rollback/**/*.sql" />
+    <None Include="Deployments/Migrations/**/*.sql" />
+    <None Include="Deployments/Rollback/**/*.sql" />
+    <None Include="scripts/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="SchemaModel" />
+    <Folder Include="Deployments" />
+    <Folder Include="Deployments/Migrations" />
+    <Folder Include="Deployments/Rollback" />
+    <Folder Include="Deployments/Rollback/FULL" />
+    <Folder Include="Deployments/Rollback/SOFT" />
+    <Folder Include="scripts" />
+  </ItemGroup>
+</Project>
