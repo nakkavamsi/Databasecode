@@ -90,6 +90,9 @@ def write_vstemplate(target_dir: Path) -> None:
           <Folder Name="FULL" TargetFolderName="FULL" />
           <Folder Name="SOFT" TargetFolderName="SOFT" />
         </Folder>
+        <Folder Name="pre-deployments" TargetFolderName="pre-deployments">
+          <ProjectItem ReplaceParameters="false">Deployments\\pre-deployments\\readme.txt</ProjectItem>
+        </Folder>
       </Folder>
       <Folder Name="scripts" TargetFolderName="scripts">
         <ProjectItem ReplaceParameters="false">scripts\\sync-schema-from-migrations.py</ProjectItem>
