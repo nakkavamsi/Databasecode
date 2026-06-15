@@ -64,7 +64,7 @@ def write_vstemplate(target_dir: Path) -> None:
   xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
   <TemplateData>
     <Name>SQL Server Database (Migration-Driven)</Name>
-    <Description>SQL Server dacpac project with semver migrations, SchemaModel sync, Migration-Id tooling, and CI.</Description>
+    <Description>SQL Server dacpac project with semver migrations, SchemaModel sync, baseline bootstrap, Migration-Id tooling, and CI.</Description>
     <ProjectType>Database</ProjectType>
     <ProjectSubType>SQL</ProjectSubType>
     <SortOrder>1000</SortOrder>
@@ -93,6 +93,7 @@ def write_vstemplate(target_dir: Path) -> None:
       </Folder>
       <Folder Name="scripts" TargetFolderName="scripts">
         <ProjectItem ReplaceParameters="false">scripts\\sync-schema-from-migrations.py</ProjectItem>
+        <ProjectItem ReplaceParameters="false">scripts\\bootstrap-from-baseline.py</ProjectItem>
         <ProjectItem ReplaceParameters="false">scripts\\migration_id.py</ProjectItem>
         <ProjectItem ReplaceParameters="false">scripts\\new-migration.py</ProjectItem>
         <ProjectItem ReplaceParameters="false">scripts\\stamp-migration-id.py</ProjectItem>

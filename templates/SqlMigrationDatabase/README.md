@@ -8,6 +8,9 @@ SQL Server database project with **migration-driven schema management**.
 # Add a migration
 python3 scripts/new-migration.py --version 1.1.0 --name dbo.MyTable
 
+# Bootstrap from an exported baseline script (brownfield adoption)
+python3 scripts/bootstrap-from-baseline.py --input baseline.sql --version 1.0.0 --sync
+
 # Build dacpac (sync runs automatically)
 dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
 ```
@@ -16,6 +19,6 @@ dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
 
 - `Deployments/Migrations/` — source of truth (semver folders)
 - `SchemaModel/` — auto-generated declarative model (do not edit)
-- `scripts/` — sync and migration-id tooling
+- `scripts/` — sync, bootstrap, and migration-id tooling
 
 See the full documentation in the source template repository README.

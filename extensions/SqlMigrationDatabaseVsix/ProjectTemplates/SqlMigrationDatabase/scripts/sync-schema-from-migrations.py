@@ -22,6 +22,9 @@ Supported in each migration file:
   - CREATE TYPE ... FROM / AS TABLE -> Types/UserDefinedDataTypes or Types/UserDefinedTableTypes
   - CREATE SCHEMA -> Security/Schemas/{schema}.sql
   - CREATE ROLE -> Security/Roles/{role}.sql
+  - CREATE SEQUENCE -> {schema}/Sequences/{sequence}.sql
+  - CREATE ASSEMBLY -> Assemblies/{assembly}.sql
+  - ALTER ROLE ... ADD MEMBER / sp_addrolemember -> merged into Security/Roles/{role}.sql
   - SCHEMA-OBJECT block with the full desired definition:
 
     -- SCHEMA-OBJECT-START
@@ -150,6 +153,31 @@ IF_DATABASE_PRINCIPAL_ID_PATTERN = re.compile(
 SECURITY_ROOT_FOLDER = "Security"
 SECURITY_SCHEMAS_FOLDER = "Schemas"
 SECURITY_ROLES_FOLDER = "Roles"
+SEQUENCES_FOLDER = "Sequences"
+ASSEMBLIES_FOLDER = "Assemblies"
+
+CREATE_SEQUENCE_PATTERN = re.compile(
+    r"\bCREATE\s+(?:OR\s+ALTER\s+)?SEQUENCE\s+"
+    r"(\[(?:[^\]]+)\]|(?:\w+))\.(\[(?:[^\]]+)\]|(?:\w+))",
+    re.IGNORECASE,
+)
+
+CREATE_ASSEMBLY_PATTERN = re.compile(
+    r"\bCREATE\s+(?:OR\s+ALTER\s+)?ASSEMBLY\s+(\[(?:[^\]]+)\]|(?:\w+))",
+    re.IGNORECASE,
+)
+
+ALTER_ROLE_ADD_MEMBER_PATTERN = re.compile(
+    r"\bALTER\s+ROLE\s+(\[(?:[^\]]+)\]|(?:\w+))\s+ADD\s+MEMBER\s+(\[(?:[^\]]+)\]|(?:\w+))",
+    re.IGNORECASE,
+)
+
+SP_ADDROLEMEMBER_PATTERN = re.compile(
+    r"\b(?:EXEC(?:UTE)?(?:\s*\(\s*N')?\s*)?"
+    r"sp_addrolemember\s+"
+    r"(?:@rolename\s*=\s*)?N?'([^']+)'\s*,\s*(?:@membername\s*=\s*)?N?'([^']+)'",
+    re.IGNORECASE,
+)
 
 EXEC_N_PATTERN = re.compile(
     r"EXEC\s*\(\s*N'(.*?)'\s*\)\s*;?",
@@ -427,6 +455,41 @@ class TableModel:
         return create_table + "\nGO\n\n" + "\nGO\n\n".join(trailing)
 
 
+@dataclass
+class RoleModel:
+    name: str
+    create_sql: str = ""
+    member_order: list[str] = field(default_factory=list)
+    members: dict[str, str] = field(default_factory=dict)
+
+    def set_create(self, sql: str) -> None:
+        self.create_sql = normalize_for_declarative_model(sql)
+
+    def add_member(self, member_name: str, sql: str) -> None:
+        normalized_member = strip_brackets(member_name)
+        normalized_sql = sql.strip()
+        if normalized_member not in self.members:
+            self.member_order.append(normalized_member)
+        self.members[normalized_member] = normalized_sql
+
+    def render(self) -> str:
+        batches: list[str] = []
+        if self.create_sql:
+            batches.append(self.create_sql.strip())
+        elif self.members:
+            batches.append(f"CREATE ROLE [{self.name}];")
+        batches.extend(
+            self.members[member_name]
+            for member_name in self.member_order
+            if member_name in self.members
+        )
+        if not batches:
+            raise ValueError(f"Role [{self.name}] has no CREATE ROLE or members")
+        if len(batches) == 1:
+            return batches[0]
+        return "\nGO\n\n".join(batches)
+
+
 def parse_semver_folder(name: str) -> tuple[int, int, int] | None:
     match = SEMVER_FOLDER_PATTERN.fullmatch(name)
     if not match:
@@ -680,6 +743,13 @@ def get_or_create_table(
     return registry[key]
 
 
+def get_or_create_role(registry: dict[str, RoleModel], name: str) -> RoleModel:
+    role_name = strip_brackets(name)
+    if role_name not in registry:
+        registry[role_name] = RoleModel(name=role_name)
+    return registry[role_name]
+
+
 def is_table_type(sql: str) -> bool:
     return re.search(r"\bAS\s+TABLE\b", sql, re.IGNORECASE) is not None
 
@@ -719,6 +789,51 @@ def resolve_role_output_path(schemas_dir: Path, sql: str) -> Path | None:
         / SECURITY_ROLES_FOLDER
         / f"{role_name}.sql"
     )
+
+
+def resolve_sequence_output_path(schemas_dir: Path, sql: str) -> Path | None:
+    match = CREATE_SEQUENCE_PATTERN.search(sql)
+    if not match:
+        return None
+    schema_name = strip_brackets(match.group(1))
+    sequence_name = strip_brackets(match.group(2))
+    return (
+        schemas_dir
+        / schema_name
+        / SEQUENCES_FOLDER
+        / f"{sequence_name}.sql"
+    )
+
+
+def resolve_assembly_output_path(schemas_dir: Path, sql: str) -> Path | None:
+    match = CREATE_ASSEMBLY_PATTERN.search(sql)
+    if not match:
+        return None
+    assembly_name = strip_brackets(match.group(1))
+    return schemas_dir / ASSEMBLIES_FOLDER / f"{assembly_name}.sql"
+
+
+def normalize_role_membership_sql(role_name: str, member_name: str) -> str:
+    return f"ALTER ROLE [{role_name}] ADD MEMBER [{member_name}];"
+
+
+def parse_role_membership(sql: str) -> tuple[str, str] | None:
+    alter_match = ALTER_ROLE_ADD_MEMBER_PATTERN.search(sql)
+    if alter_match:
+        return (
+            strip_brackets(alter_match.group(1)),
+            strip_brackets(alter_match.group(2)),
+        )
+
+    sp_match = SP_ADDROLEMEMBER_PATTERN.search(sql)
+    if sp_match:
+        return sp_match.group(1), sp_match.group(2)
+
+    exec_match = EXEC_N_PATTERN.search(sql)
+    if exec_match:
+        return parse_role_membership(exec_match.group(1))
+
+    return None
 
 
 def parse_create_index_target(sql: str) -> tuple[str, str, str] | None:
@@ -805,6 +920,14 @@ def resolve_output_path(schemas_dir: Path, sql: str) -> Path | None:
     type_path = resolve_type_output_path(schemas_dir, sql)
     if type_path:
         return type_path
+
+    sequence_path = resolve_sequence_output_path(schemas_dir, sql)
+    if sequence_path:
+        return sequence_path
+
+    assembly_path = resolve_assembly_output_path(schemas_dir, sql)
+    if assembly_path:
+        return assembly_path
 
     match = CREATE_PATTERN.search(sql)
     if not match:
@@ -1058,6 +1181,81 @@ def extract_role_statements(content: str) -> list[str]:
     return statements
 
 
+def extract_sequence_statements(content: str) -> list[str]:
+    statements: list[str] = []
+    seen: set[str] = set()
+
+    for match in CREATE_SEQUENCE_PATTERN.finditer(content):
+        statement_end = find_statement_end_semicolon(content, match.start())
+        statement = content[match.start():statement_end].strip()
+        key = sql_dedupe_key(statement)
+        if key not in seen:
+            seen.add(key)
+            statements.append(statement)
+
+    for wrapper in IF_OBJECT_ID_PATTERN.finditer(content):
+        inner = wrapper.group(1).strip()
+        if CREATE_SEQUENCE_PATTERN.search(inner):
+            key = sql_dedupe_key(inner)
+            if key not in seen:
+                seen.add(key)
+                statements.append(inner)
+
+    return statements
+
+
+def extract_assembly_statements(content: str) -> list[str]:
+    statements: list[str] = []
+    seen: set[str] = set()
+
+    for match in CREATE_ASSEMBLY_PATTERN.finditer(content):
+        statement_end = find_statement_end_semicolon(content, match.start())
+        statement = content[match.start():statement_end].strip()
+        key = sql_dedupe_key(statement)
+        if key not in seen:
+            seen.add(key)
+            statements.append(statement)
+
+    for wrapper in IF_OBJECT_ID_PATTERN.finditer(content):
+        inner = wrapper.group(1).strip()
+        if CREATE_ASSEMBLY_PATTERN.search(inner):
+            key = sql_dedupe_key(inner)
+            if key not in seen:
+                seen.add(key)
+                statements.append(inner)
+
+    return statements
+
+
+def extract_role_membership_statements(content: str) -> list[str]:
+    statements: list[str] = []
+    seen: set[str] = set()
+
+    def add_membership(sql: str) -> None:
+        membership = parse_role_membership(sql)
+        if not membership:
+            return
+        role_name, member_name = membership
+        normalized = normalize_role_membership_sql(role_name, member_name)
+        key = sql_dedupe_key(normalized)
+        if key in seen:
+            return
+        seen.add(key)
+        statements.append(normalized)
+
+    for match in ALTER_ROLE_ADD_MEMBER_PATTERN.finditer(content):
+        statement_end = find_statement_end_semicolon(content, match.start())
+        add_membership(content[match.start():statement_end])
+
+    for match in SP_ADDROLEMEMBER_PATTERN.finditer(content):
+        add_membership(match.group(0))
+
+    for exec_match in EXEC_N_PATTERN.finditer(content):
+        add_membership(exec_match.group(1))
+
+    return statements
+
+
 def extract_schema_statements(content: str) -> list[str]:
     statements: list[str] = []
     seen: set[str] = set()
@@ -1089,6 +1287,11 @@ def extract_other_declarative_sql(content: str) -> list[str]:
         normalized = sql.strip()
         if not normalized or contains_create_table(normalized):
             return
+        if (
+            parse_role_membership(normalized)
+            or CREATE_ROLE_PATTERN.search(normalized)
+        ):
+            return
         key = sql_dedupe_key(normalized)
         if key in seen:
             return
@@ -1110,7 +1313,8 @@ def extract_other_declarative_sql(content: str) -> list[str]:
             or CREATE_SCHEMA_PATTERN.search(inner)
             or CREATE_SYNONYM_PATTERN.search(inner)
             or CREATE_TYPE_HEADER_PATTERN.search(inner)
-            or CREATE_ROLE_PATTERN.search(inner)
+            or CREATE_SEQUENCE_PATTERN.search(inner)
+            or CREATE_ASSEMBLY_PATTERN.search(inner)
         ):
             add_statement(inner)
             wrapped_spans.append(wrapper.span())
@@ -1145,10 +1349,18 @@ def extract_other_declarative_sql(content: str) -> list[str]:
             continue
         add_statement(statement)
 
-    for statement in extract_role_statements(content_without_blocks):
-        role_start = content_without_blocks.find(statement)
-        if role_start >= 0 and any(
-            start <= role_start < end for start, end in wrapped_spans
+    for statement in extract_sequence_statements(content_without_blocks):
+        sequence_start = content_without_blocks.find(statement)
+        if sequence_start >= 0 and any(
+            start <= sequence_start < end for start, end in wrapped_spans
+        ):
+            continue
+        add_statement(statement)
+
+    for statement in extract_assembly_statements(content_without_blocks):
+        assembly_start = content_without_blocks.find(statement)
+        if assembly_start >= 0 and any(
+            start <= assembly_start < end for start, end in wrapped_spans
         ):
             continue
         add_statement(statement)
@@ -1167,6 +1379,7 @@ def extract_alter_table_statements(content: str) -> list[tuple[str, str, str, st
 def process_migration_file(
     migration_file: Path,
     table_registry: dict[tuple[str, str], TableModel],
+    role_registry: dict[str, RoleModel],
     other_objects: dict[Path, str],
     schemas_dir: Path,
     project_root: Path,
@@ -1240,6 +1453,33 @@ def process_migration_file(
             f"-> [{model.schema}].[{model.name}].[{statistic_name}]"
         )
 
+    for statement in extract_role_statements(content):
+        role_match = CREATE_ROLE_PATTERN.search(statement)
+        if not role_match:
+            continue
+        role_name = strip_brackets(role_match.group(1))
+        model = get_or_create_role(role_registry, role_name)
+        model.set_create(statement)
+        messages.append(
+            f"Loaded CREATE ROLE from {migration_file.relative_to(project_root)} "
+            f"-> [{role_name}]"
+        )
+
+    for statement in extract_role_membership_statements(content):
+        membership = parse_role_membership(statement)
+        if not membership:
+            continue
+        role_name, member_name = membership
+        model = get_or_create_role(role_registry, role_name)
+        model.add_member(
+            member_name,
+            normalize_role_membership_sql(role_name, member_name),
+        )
+        messages.append(
+            f"Loaded role membership from {migration_file.relative_to(project_root)} "
+            f"-> [{role_name}]"
+        )
+
     for sql in extract_other_declarative_sql(content):
         output_path = resolve_output_path(schemas_dir, sql)
         if not output_path:
@@ -1303,6 +1543,7 @@ def sync(project_root: Path) -> int:
         return 0
 
     table_registry: dict[tuple[str, str], TableModel] = {}
+    role_registry: dict[str, RoleModel] = {}
     other_objects: dict[Path, str] = {}
     synced_paths: set[Path] = set()
 
@@ -1311,6 +1552,7 @@ def sync(project_root: Path) -> int:
             messages = process_migration_file(
                 migration_file,
                 table_registry,
+                role_registry,
                 other_objects,
                 schemas_dir,
                 project_root,
@@ -1329,6 +1571,19 @@ def sync(project_root: Path) -> int:
         synced_paths.add(output_path)
         print(f"Synced table model -> {output_path.relative_to(project_root)}")
 
+    for model in role_registry.values():
+        output_path = (
+            schemas_dir
+            / SECURITY_ROOT_FOLDER
+            / SECURITY_ROLES_FOLDER
+            / f"{model.name}.sql"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        rendered_sql = prepare_schema_model_sql(model.render())
+        output_path.write_text(GENERATED_HEADER + rendered_sql + "\n", encoding="utf-8")
+        synced_paths.add(output_path)
+        print(f"Synced role model -> {output_path.relative_to(project_root)}")
+
     for output_path, sql in other_objects.items():
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(GENERATED_HEADER + prepare_schema_model_sql(sql) + "\n", encoding="utf-8")
@@ -1342,6 +1597,27 @@ def sync(project_root: Path) -> int:
             index_file.unlink()
             print(f"Removed stale index file -> {index_file.relative_to(project_root)}")
         indexes_dir.rmdir()
+
+    role_memberships_dir = schemas_dir / SECURITY_ROOT_FOLDER / "RoleMemberships"
+    if role_memberships_dir.is_dir():
+        for membership_file in role_memberships_dir.glob("*.sql"):
+            membership_file.unlink()
+            print(
+                f"Removed stale role membership file -> "
+                f"{membership_file.relative_to(project_root)}"
+            )
+        role_memberships_dir.rmdir()
+
+    for maintenance_dir in schemas_dir.glob("**/Maintenance"):
+        if not maintenance_dir.is_dir():
+            continue
+        for maintenance_file in maintenance_dir.glob("*.sql"):
+            maintenance_file.unlink()
+            print(
+                f"Removed stale maintenance file -> "
+                f"{maintenance_file.relative_to(project_root)}"
+            )
+        maintenance_dir.rmdir()
 
     print(f"Schema sync complete. {len(synced_paths)} object(s) updated.")
     return 0
