@@ -15,10 +15,11 @@ SQL Server database project using **migration-driven schema management** and **S
 7. [Rollback scripts](#rollback-scripts)
 8. [Build and CI](#build-and-ci)
 9. [Current database inventory](#current-database-inventory)
-10. [How to make changes](#how-to-make-changes)
-11. [Conventions and naming](#conventions-and-naming)
-12. [Supported vs unsupported objects](#supported-vs-unsupported-objects)
-13. [Troubleshooting](#troubleshooting)
+10. [Bootstrap from existing database](#bootstrap-from-existing-database)
+11. [How to make changes](#how-to-make-changes)
+12. [Conventions and naming](#conventions-and-naming)
+13. [Supported vs unsupported objects](#supported-vs-unsupported-objects)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -69,6 +70,7 @@ Databasecode/
 ├── global.json                    # Pins .NET SDK 8.0.406
 ├── scripts/
 │   ├── sync-schema-from-migrations.py   # Migration → SchemaModel sync engine
+│   ├── bootstrap-from-baseline.py       # Split baseline SQL into migration files
 │   ├── new-migration.py                 # Scaffold new migration with unique Migration-Id
 │   ├── stamp-migration-id.py            # Add Migration-Id header to existing files
 │   └── migration_id.py                  # Shared id/header helpers
@@ -86,7 +88,7 @@ Databasecode/
 └── SchemaModel/                   # Generated declarative schema (do not edit)
     ├── Security/
     │   ├── Schemas/               # CREATE SCHEMA scripts
-    │   └── Roles/                 # CREATE ROLE scripts
+    │   └── Roles/                 # CREATE ROLE + role memberships (merged)
     ├── dbo/
     │   ├── Tables/
     │   ├── StoredProcedures/
@@ -385,7 +387,9 @@ python3 scripts/sync-schema-from-migrations.py
 | `CREATE TYPE [svc].[EmailAddress] FROM ...` | `SchemaModel/svc/Types/UserDefinedDataTypes/EmailAddress.sql` |
 | `CREATE TYPE [svc].[T] AS TABLE (...)` | `SchemaModel/svc/Types/UserDefinedTableTypes/T.sql` |
 | `CREATE SCHEMA [play]` | `SchemaModel/Security/Schemas/play.sql` |
-| `CREATE ROLE [svc_reader]` | `SchemaModel/Security/Roles/svc_reader.sql` |
+| `CREATE ROLE [svc_reader]` + `ALTER ROLE [svc_reader] ADD MEMBER [dbo]` | `SchemaModel/Security/Roles/svc_reader.sql` (merged) |
+| `CREATE SEQUENCE [dbo].[OrderNumberSeq]` | `SchemaModel/dbo/Sequences/OrderNumberSeq.sql` |
+| `CREATE ASSEMBLY [MyAssembly]` | `SchemaModel/Assemblies/MyAssembly.sql` |
 
 ---
 
@@ -550,6 +554,91 @@ Steps:
 
 ---
 
+## Bootstrap from existing database
+
+Use this when adopting a **brownfield** SQL Server database into the migration-driven workflow. The bootstrap script does **not** connect to a live server — export schema SQL first, then split it into migration files.
+
+### 1. Export schema-only SQL from the live database
+
+Any of these work:
+
+| Tool | Notes |
+|------|-------|
+| **SSMS** | Database → Tasks → Generate Scripts → schema only |
+| **Azure Data Studio** | Generate scripts workflow |
+| **[mssql-scripter](https://github.com/microsoft/mssql-scripter)** | CLI export |
+| **SqlPackage** | Extract to `.dacpac`, then script to SQL |
+
+Example SqlPackage extract:
+
+```bash
+sqlpackage /Action:Extract \
+  /SourceConnectionString:"Server=...;Database=YourDb;..." \
+  /TargetFile:baseline.dacpac
+```
+
+Script the resulting `.dacpac` to a single `.sql` file (SSMS or SqlPackage `/Action:Script`).
+
+### 2. Bootstrap migration files
+
+**Path:** `scripts/bootstrap-from-baseline.py`
+
+```bash
+python3 scripts/bootstrap-from-baseline.py \
+  --input baseline.sql \
+  --version 1.0.0 \
+  --sync
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--input` | Baseline schema SQL file (required) |
+| `--version` | Target semver folder under `Deployments/Migrations/` (required) |
+| `--sync` | Run `sync-schema-from-migrations.py` after writing files |
+| `--dry-run` | Print planned migration files without writing |
+| `--force` | Delete existing `.sql` files in the target version folder first |
+| `--project-root` | Repository root (defaults to parent of `scripts/`) |
+
+The script:
+
+1. Strips common SSMS noise (`USE`, `SET ANSI_NULLS`, block comments)
+2. Splits recognized objects into ordered migration files
+3. Wraps idempotent guards (`IF SCHEMA_ID`, `IF OBJECT_ID`, `CREATE OR ALTER`, etc.)
+4. Stamps `-- Migration-Id:` headers on every file
+5. Optionally syncs `SchemaModel/`
+
+Generated file order: schemas → types → tables (FK-safe order) → deferred foreign keys and other `ALTER TABLE` → indexes → statistics → routines → synonyms → roles.
+
+Inline and column-level foreign keys in `CREATE TABLE` are extracted into separate `ALTER TABLE ... ADD CONSTRAINT` migrations so parent tables can be created first.
+
+Example output layout:
+
+```
+Deployments/Migrations/1.0.0/
+  01_CS_inventory.sql
+  02_inventory.Product.sql
+  03_inventory.Product.add_IX_Product_Name.sql
+  04_inventory.usp_GetProduct.sql
+```
+
+### 3. Review, sync, and build
+
+```bash
+python3 scripts/sync-schema-from-migrations.py
+dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
+```
+
+Compare the dacpac to the live database with SqlPackage `/Action:DeployReport` or SSMS Schema Compare.
+
+### Bootstrap limitations
+
+- **Circular foreign keys:** rare self-referential or multi-table cycles are reported; inline FKs are still deferred to `ALTER TABLE` migrations.
+- **Unsupported objects:** users/logins, certificates, and encryption keys are skipped (see [Supported vs unsupported objects](#supported-vs-unsupported-objects)).
+- **Unrecognized batches:** skipped with warnings — inspect stderr after bootstrap.
+- **Do not edit `SchemaModel/` directly** — always change migrations and re-sync.
+
+---
+
 ## How to make changes
 
 ### Add a new table
@@ -629,17 +718,18 @@ Always use bracketed identifiers: `[schema].[object]`.
 | User-defined types (alias + table types) | Yes |
 | Schemas | Yes |
 | Database roles | Yes |
+| Sequences | Yes |
+| CLR assemblies | Yes |
+| Role memberships (`ALTER ROLE ... ADD MEMBER`, `sp_addrolemember`) | Yes (merged into `Security/Roles/{role}.sql`) |
 
 ### Not yet supported
 
 | Category | Notes |
 |----------|-------|
-| Sequences | Use `IDENTITY` today; `CREATE SEQUENCE` not synced |
-| CLR assemblies | `CREATE ASSEMBLY` not synced |
 | Symmetric / asymmetric keys, certificates | Not synced |
 | Users / logins | Intentionally excluded |
-| Role memberships (`sp_addrolemember`) | Deployment-only |
-| `UPDATE STATISTICS` | Maintenance, not schema model |
+| `UPDATE STATISTICS` | Maintenance only; not synced to SchemaModel |
+| `sp_droprolemember` | Not synced (add forward migration to remove membership manually) |
 
 ---
 
