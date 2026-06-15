@@ -22,9 +22,13 @@
   <ItemGroup>
     <Build Remove="Deployments/Migrations/**/*.sql" />
     <Build Remove="Deployments/Rollback/**/*.sql" />
+    <Build Remove="templates/**/*.sql" />
+    <Build Remove="extensions/**/*.sql" />
     <None Include="Deployments/Migrations/**/*.sql" />
     <None Include="Deployments/Rollback/**/*.sql" />
     <None Include="scripts/**" />
+    <None Include="templates/**" />
+    <None Include="extensions/**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,5 +39,7 @@
     <Folder Include="Deployments/Rollback/FULL" />
     <Folder Include="Deployments/Rollback/SOFT" />
     <Folder Include="scripts" />
+    <Folder Include="templates" />
+    <Folder Include="extensions" />
   </ItemGroup>
 </Project>
