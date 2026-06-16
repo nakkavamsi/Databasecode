@@ -10,16 +10,17 @@ SQL Server database project using **migration-driven schema management** and **S
 2. [Repository layout](#repository-layout)
 3. [Core concepts](#core-concepts)
 4. [Migrations (source of truth)](#migrations-source-of-truth)
-5. [Schema sync script](#schema-sync-script)
-6. [SchemaModel (generated)](#schemamodel-generated)
-7. [Rollback scripts](#rollback-scripts)
-8. [Build and CI](#build-and-ci)
-9. [Current database inventory](#current-database-inventory)
-10. [Bootstrap from existing database](#bootstrap-from-existing-database)
-11. [How to make changes](#how-to-make-changes)
-12. [Conventions and naming](#conventions-and-naming)
-13. [Supported vs unsupported objects](#supported-vs-unsupported-objects)
-14. [Troubleshooting](#troubleshooting)
+5. [Deploy migrations and tracking](#deploy-migrations-and-tracking)
+6. [Schema sync script](#schema-sync-script)
+7. [SchemaModel (generated)](#schemamodel-generated)
+8. [Rollback scripts](#rollback-scripts)
+9. [Build and CI](#build-and-ci)
+10. [Current database inventory](#current-database-inventory)
+11. [Bootstrap from existing database](#bootstrap-from-existing-database)
+12. [How to make changes](#how-to-make-changes)
+13. [Conventions and naming](#conventions-and-naming)
+14. [Supported vs unsupported objects](#supported-vs-unsupported-objects)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -65,7 +66,9 @@ SSDT validates `SchemaModel/` as a declarative database definition. Imperative g
 
 ```
 Databasecode/
-├── .github/workflows/build.yml    # CI: sync + dotnet build + dacpac artifact
+├── .github/workflows/
+│   ├── build.yml                  # CI: sync + dotnet build + dacpac artifact
+│   └── deploy-migrations.yml      # CI integration test + manual deploy
 ├── Databasecode.sqlproj           # SQL Server SDK project (Microsoft.Build.Sql 2.2.0)
 ├── global.json                    # Pins .NET SDK 8.0.406
 ├── scripts/
@@ -73,6 +76,7 @@ Databasecode/
 │   ├── bootstrap-from-baseline.py       # Split baseline SQL into migration files
 │   ├── new-migration.py                 # Scaffold new migration with unique Migration-Id
 │   ├── stamp-migration-id.py            # Add Migration-Id header to existing files
+│   ├── run-migrations.py                # Apply pending migrations; track in __MigrationHistory
 │   └── migration_id.py                  # Shared id/header helpers
 ├── .cursor/
 │   ├── hooks.json                       # afterFileEdit hook for auto-stamping
@@ -344,6 +348,129 @@ CREATE TABLE [dbo].[Person] ( ... );
 
 ---
 
+## Deploy migrations and tracking
+
+**Path:** `scripts/run-migrations.py`
+
+Applies pending scripts from `Deployments/Migrations/` to a target SQL Server database and records each successful run in `dbo.__MigrationHistory`. The runner keys off the `-- Migration-Id` header in each file (not the filename), so renames do not cause re-execution.
+
+**Requires:** [sqlcmd](https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-utility) (SQL Server command-line tools).
+
+### History table
+
+Created automatically on first run:
+
+| Column | Purpose |
+|--------|---------|
+| `MigrationId` | Primary key — value from `-- Migration-Id:` header |
+| `VersionFolder` | Semver folder, e.g. `2.2.0` |
+| `ScriptName` | File name, e.g. `01_dbo.person.add_phone.sql` |
+| `AppliedUtc` | When the script was recorded |
+
+`dbo.__MigrationHistory` is **deployment metadata only** — it is not synced into `SchemaModel/` or the dacpac.
+
+Pre-deployment scripts are tracked in `dbo.__PreDeploymentHistory`:
+
+| Column | Purpose |
+|--------|---------|
+| `ScriptPath` | Primary key — path relative to `Deployments/pre-deployments/` |
+| `AppliedUtc` | When the script was recorded |
+
+### Recommended deployment order
+
+```
+1. scripts/run-migrations.py --pre-deployments   (CREATE DATABASE, logins, users, etc.)
+2. scripts/run-migrations.py                     (schema migrations; default step)
+3. sqlpackage Publish                            (optional: declarative reconcile via dacpac)
+```
+
+Pre-deployment scripts live in `Deployments/pre-deployments/**/*.sql`. They are tracked separately in `dbo.__PreDeploymentHistory` (keyed by relative path). Migrations use `dbo.__MigrationHistory` (keyed by `-- Migration-Id`).
+
+Use migrations for versioned, incremental rollout. Use dacpac publish when you want SqlPackage to diff the full declarative model against the database.
+
+### Pre-deployment scripts
+
+Place idempotent SQL under `Deployments/pre-deployments/` (any subfolder). The runner executes `*.sql` files in path order.
+
+To run a script against another database (for example `master` when creating a database), add a header:
+
+```sql
+-- SqlCmd-Database: master
+IF DB_ID(N'MyDb') IS NULL
+BEGIN
+    CREATE DATABASE [MyDb];
+END;
+```
+
+History for that script is stored in the database it ran against.
+
+### Apply pending migrations
+
+Windows integrated auth:
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --pre-deployments
+```
+
+SQL login:
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments
+```
+
+Migrations only (skip pre-deployments):
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C
+```
+
+Pre-deployments only:
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments-only
+```
+
+On Linux/macOS, use `-U`/`-P` (integrated auth `-E` is Windows-only). Prefer the `SQLCMDPASSWORD` environment variable instead of `-P` in CI.
+
+### Check status (applied vs pending)
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --status
+```
+
+### Preview without executing
+
+```bash
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --dry-run
+```
+
+### List migration files (offline)
+
+```bash
+python3 scripts/run-migrations.py --list-files
+python3 scripts/run-migrations.py --list-pre-deployments
+```
+
+### Optional filters
+
+```bash
+# Skip test-only version folders
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --exclude-version 9.9.9
+
+# Apply only through 2.2.0
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --up-to-version 2.2.0
+```
+
+### Query history directly
+
+```sql
+SELECT [MigrationId], [VersionFolder], [ScriptName], [AppliedUtc]
+FROM [dbo].[__MigrationHistory]
+ORDER BY [AppliedUtc];
+```
+
+---
+
 ## Schema sync script
 
 **Path:** `scripts/sync-schema-from-migrations.py`
@@ -494,7 +621,7 @@ bin/Release/Databasecode.dacpac
 
 ### GitHub Actions
 
-Workflow: `.github/workflows/build.yml`
+#### Build dacpac — `.github/workflows/build.yml`
 
 Triggers: push/PR to `main` or `nvkdbchanges`
 
@@ -503,9 +630,36 @@ Steps:
 1. Checkout
 2. Setup .NET 8.0.406
 3. Setup Python 3.x
-4. Run `python3 scripts/sync-schema-from-migrations.py`
-5. Run `dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true`
-6. Upload `Databasecode.dacpac` as CI artifact
+4. Validate migration/pre-deployment manifests (`--list-files`, `--list-pre-deployments`)
+5. Run `python3 scripts/sync-schema-from-migrations.py`
+6. Run `dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true`
+7. Upload `Databasecode.dacpac` as CI artifact
+
+#### Deploy migrations — `.github/workflows/deploy-migrations.yml`
+
+Triggers: push/PR to `main` or `nvkdbchanges`, plus **workflow_dispatch** for real environments.
+
+| Job | Purpose |
+|-----|---------|
+| `validate-manifest` | Offline check that all migration files have `Migration-Id` headers |
+| `integration-test` | SQL Server 2022 container — create DB, run `--pre-deployments`, apply migrations, `--status` |
+| `deploy` | Manual only — applies to a real server using GitHub secrets |
+
+**Integration test** excludes the `9.9.9` test migration folder by default.
+
+**Manual deploy secrets** (repository or environment):
+
+| Secret | Example |
+|--------|---------|
+| `DEPLOY_SQL_SERVER` | `myserver.database.windows.net` |
+| `DEPLOY_SQL_DATABASE` | `MyDb` |
+| `DEPLOY_SQL_USER` | `deploy_user` |
+| `DEPLOY_SQL_PASSWORD` | (password; also passed via `SQLCMDPASSWORD` env) |
+
+Run from **Actions → Deploy Migrations → Run workflow**. Options:
+
+- **Exclude 9.9.9 test migrations** (default: on)
+- **Run pre-deployments first** (default: on)
 
 ---
 
