@@ -7,10 +7,6 @@ on:
         description: Exclude 9.9.9 test migration folder
         type: boolean
         default: true
-      run_pre_deployments:
-        description: Run Deployments/pre-deployments scripts first
-        type: boolean
-        default: true
   push:
     branches:
       - main
@@ -37,10 +33,8 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Validate migration and pre-deployment manifests
-        run: |
-          python3 scripts/run-migrations.py --list-files
-          python3 scripts/run-migrations.py --list-pre-deployments
+      - name: Validate migration manifest
+        run: python3 scripts/run-migrations.py --list-files
 
   integration-test:
     runs-on: ubuntu-latest
@@ -85,7 +79,7 @@ jobs:
           /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -d master -Q \
             "IF DB_ID(N'${{ env.INTEGRATION_DATABASE }}') IS NULL CREATE DATABASE [${{ env.INTEGRATION_DATABASE }}];"
 
-      - name: Apply pre-deployments and migrations
+      - name: Apply migrations
         env:
           SQLCMDPASSWORD: ${{ env.INTEGRATION_SA_PASSWORD }}
         run: |
@@ -94,17 +88,11 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          PRE_ARGS=""
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ inputs.run_pre_deployments }}" != "false" ]; then
-            PRE_ARGS="--pre-deployments"
-          fi
-
           python3 scripts/run-migrations.py \
             -S localhost \
             -d "${{ env.INTEGRATION_DATABASE }}" \
             -U sa \
             -C \
-            $PRE_ARGS \
             $EXCLUDE_ARGS
 
       - name: Verify deployment status
@@ -146,7 +134,7 @@ jobs:
           sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18
           echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
 
-      - name: Apply pre-deployments and migrations
+      - name: Apply migrations
         env:
           SQLCMDPASSWORD: ${{ secrets.DEPLOY_SQL_PASSWORD }}
         run: |
@@ -155,17 +143,11 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          PRE_ARGS=""
-          if [ "${{ inputs.run_pre_deployments }}" != "false" ]; then
-            PRE_ARGS="--pre-deployments"
-          fi
-
           python3 scripts/run-migrations.py \
             -S "${{ secrets.DEPLOY_SQL_SERVER }}" \
             -d "${{ secrets.DEPLOY_SQL_DATABASE }}" \
             -U "${{ secrets.DEPLOY_SQL_USER }}" \
             -C \
-            $PRE_ARGS \
             $EXCLUDE_ARGS
 
       - name: Show deployment status

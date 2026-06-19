@@ -379,18 +379,18 @@ Pre-deployment scripts are tracked in `dbo.__PreDeploymentHistory`:
 ### Recommended deployment order
 
 ```
-1. scripts/run-migrations.py --pre-deployments   (CREATE DATABASE, logins, users, etc.)
-2. scripts/run-migrations.py                     (schema migrations; default step)
-3. sqlpackage Publish                            (optional: declarative reconcile via dacpac)
+1. Deployments/pre-deployments/   (manual: CREATE DATABASE, logins, users)
+2. scripts/run-migrations.py      (schema migrations)
+3. sqlpackage Publish             (optional: declarative reconcile via dacpac)
 ```
 
-Pre-deployment scripts live in `Deployments/pre-deployments/**/*.sql`. They are tracked separately in `dbo.__PreDeploymentHistory` (keyed by relative path). Migrations use `dbo.__MigrationHistory` (keyed by `-- Migration-Id`).
+Pre-deployment scripts live in `Deployments/pre-deployments/**/*.sql`. They are **manual only** — not run by CI and not included in the dacpac. Optionally, `scripts/run-migrations.py --pre-deployments-only` can apply and track them in `dbo.__PreDeploymentHistory` when you run locally. Migrations use `dbo.__MigrationHistory` (keyed by `-- Migration-Id`).
 
 Use migrations for versioned, incremental rollout. Use dacpac publish when you want SqlPackage to diff the full declarative model against the database.
 
-### Pre-deployment scripts
+### Pre-deployment scripts (manual)
 
-Place idempotent SQL under `Deployments/pre-deployments/` (any subfolder). The runner executes `*.sql` files in path order.
+Place idempotent SQL under `Deployments/pre-deployments/` (any subfolder). Run these **manually** before migrations — CI and dacpac builds do not execute them.
 
 To run a script against another database (for example `master` when creating a database), add a header:
 
@@ -409,22 +409,16 @@ History for that script is stored in the database it ran against.
 Windows integrated auth:
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --pre-deployments
+python3 scripts/run-migrations.py -S localhost -d MyDb -E -C
 ```
 
 SQL login:
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments
-```
-
-Migrations only (skip pre-deployments):
-
-```bash
 python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C
 ```
 
-Pre-deployments only:
+Pre-deployments (manual, optional runner):
 
 ```bash
 python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments-only
@@ -448,7 +442,6 @@ python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --dry-run
 
 ```bash
 python3 scripts/run-migrations.py --list-files
-python3 scripts/run-migrations.py --list-pre-deployments
 ```
 
 ### Optional filters
@@ -630,7 +623,7 @@ Steps:
 1. Checkout
 2. Setup .NET 8.0.406
 3. Setup Python 3.x
-4. Validate migration/pre-deployment manifests (`--list-files`, `--list-pre-deployments`)
+4. Validate migration manifest (`--list-files`)
 5. Run `python3 scripts/sync-schema-from-migrations.py`
 6. Run `dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true`
 7. Upload `Databasecode.dacpac` as CI artifact
@@ -642,7 +635,7 @@ Triggers: push/PR to `main` or `nvkdbchanges`, plus **workflow_dispatch** for re
 | Job | Purpose |
 |-----|---------|
 | `validate-manifest` | Offline check that all migration files have `Migration-Id` headers |
-| `integration-test` | SQL Server 2022 container — create DB, run `--pre-deployments`, apply migrations, `--status` |
+| `integration-test` | SQL Server 2022 container — create DB, apply migrations, `--status` |
 | `deploy` | Manual only — applies to a real server using GitHub secrets |
 
 **Integration test** excludes the `9.9.9` test migration folder by default.
@@ -656,10 +649,11 @@ Triggers: push/PR to `main` or `nvkdbchanges`, plus **workflow_dispatch** for re
 | `DEPLOY_SQL_USER` | `deploy_user` |
 | `DEPLOY_SQL_PASSWORD` | (password; also passed via `SQLCMDPASSWORD` env) |
 
-Run from **Actions → Deploy Migrations → Run workflow**. Options:
+Run from **Actions → Deploy Migrations → Run workflow**. Option:
 
 - **Exclude 9.9.9 test migrations** (default: on)
-- **Run pre-deployments first** (default: on)
+
+Pre-deployments are **not** run by CI — execute `Deployments/pre-deployments/` manually before deploying.
 
 ---
 

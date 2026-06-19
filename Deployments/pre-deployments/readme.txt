@@ -15,8 +15,11 @@ for example:
   - DBA runbooks and other database-related documentation
 
 These files are NOT synced to SchemaModel/ and are NOT included in the dacpac.
-The deployment runner (scripts/run-migrations.py --pre-deployments) applies them
-before migrations and tracks applied scripts in dbo.__PreDeploymentHistory.
+They are NOT run by CI build or deploy workflows — run them manually before
+migrations (for example via SSMS, Azure Data Studio, or sqlcmd).
+
+Optional: scripts/run-migrations.py --pre-deployments-only can apply and track
+them in dbo.__PreDeploymentHistory when you choose to use the runner locally.
 
 Optional header for scripts that must run against another database:
 

@@ -15,7 +15,7 @@ python3 scripts/bootstrap-from-baseline.py --input baseline.sql --version 1.0.0 
 dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
 
 # Apply pending migrations to a database (requires sqlcmd)
-python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P '...' -C --pre-deployments --status
+python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P '...' -C --status
 ```
 
 ## Layout
