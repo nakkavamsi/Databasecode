@@ -33,8 +33,11 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install sql-migration-tools
+        run: pip install -r requirements.txt
+
       - name: Validate migration manifest
-        run: python3 scripts/run-migrations.py --list-files
+        run: sql-mig run --list-files
 
   integration-test:
     runs-on: ubuntu-latest
@@ -64,6 +67,9 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install sql-migration-tools
+        run: pip install -r requirements.txt
+
       - name: Install sqlcmd
         run: |
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
@@ -88,7 +94,7 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          python3 scripts/run-migrations.py \
+          sql-mig run \
             -S localhost \
             -d "${{ env.INTEGRATION_DATABASE }}" \
             -U sa \
@@ -104,7 +110,7 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          python3 scripts/run-migrations.py \
+          sql-mig run \
             -S localhost \
             -d "${{ env.INTEGRATION_DATABASE }}" \
             -U sa \
@@ -126,6 +132,9 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install sql-migration-tools
+        run: pip install -r requirements.txt
+
       - name: Install sqlcmd
         run: |
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
@@ -143,7 +152,7 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          python3 scripts/run-migrations.py \
+          sql-mig run \
             -S "${{ secrets.DEPLOY_SQL_SERVER }}" \
             -d "${{ secrets.DEPLOY_SQL_DATABASE }}" \
             -U "${{ secrets.DEPLOY_SQL_USER }}" \
@@ -159,7 +168,7 @@ jobs:
             EXCLUDE_ARGS="--exclude-version 9.9.9"
           fi
 
-          python3 scripts/run-migrations.py \
+          sql-mig run \
             -S "${{ secrets.DEPLOY_SQL_SERVER }}" \
             -d "${{ secrets.DEPLOY_SQL_DATABASE }}" \
             -U "${{ secrets.DEPLOY_SQL_USER }}" \

@@ -27,7 +27,7 @@ fi
 
 case "$FILE_PATH" in
   *Deployments/Migrations/*/*.sql)
-    python3 "$ROOT/scripts/stamp-migration-id.py" --quiet "$FILE_PATH" || true
+    python3 -m sql_mig stamp --quiet "$FILE_PATH" || true
     ;;
 esac
 

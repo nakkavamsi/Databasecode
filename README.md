@@ -1,6 +1,14 @@
 # Databasecode
 
-SQL Server database project using **migration-driven schema management** and **SSDT dacpac builds**. Developers author incremental change scripts under `Deployments/Migrations/`; a Python sync tool materializes a declarative `SchemaModel/` that `Microsoft.Build.Sql` compiles into a `.dacpac`.
+SQL Server database project using **migration-driven schema management** and **SSDT dacpac builds**. Developers author incremental change scripts under `Deployments/Migrations/`; shared tooling (`sql-mig` from [`sql-migration-tools`](https://github.com/nakkavamsi/sql-migration-tools)) materializes a declarative `SchemaModel/` that `Microsoft.Build.Sql` compiles into a `.dacpac`.
+
+**Install shared tooling first:**
+
+```bash
+pip install -r requirements.txt
+# local sibling checkout alternative:
+# pip install -e ../sql-migration-tools
+```
 
 ---
 
@@ -33,7 +41,7 @@ SQL Server database project using **migration-driven schema management** and **S
 │                         SOURCE OF TRUTH                                  │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                 │
-                                │  python3 scripts/sync-schema-from-migrations.py
+                                │  sql-mig sync
                                 │  (runs automatically before dotnet build)
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -69,15 +77,16 @@ Databasecode/
 ├── .github/workflows/
 │   ├── build.yml                  # CI: sync + dotnet build + dacpac artifact
 │   └── deploy-migrations.yml      # CI integration test + manual deploy
+├── requirements.txt               # Installs shared sql-migration-tools (sql-mig CLI)
 ├── Databasecode.sqlproj           # SQL Server SDK project (Microsoft.Build.Sql 2.2.0)
 ├── global.json                    # Pins .NET SDK 8.0.406
 ├── scripts/
-│   ├── sync-schema-from-migrations.py   # Migration → SchemaModel sync engine
-│   ├── bootstrap-from-baseline.py       # Split baseline SQL into migration files
-│   ├── new-migration.py                 # Scaffold new migration with unique Migration-Id
-│   ├── stamp-migration-id.py            # Add Migration-Id header to existing files
-│   ├── run-migrations.py                # Apply pending migrations; track in __MigrationHistory
-│   └── migration_id.py                  # Shared id/header helpers
+│   ├── sync-schema-from-migrations.py   # Thin wrapper → sql-mig sync
+│   ├── bootstrap-from-baseline.py       # Thin wrapper → sql-mig bootstrap
+│   ├── new-migration.py                 # Thin wrapper → sql-mig new
+│   ├── stamp-migration-id.py            # Thin wrapper → sql-mig stamp
+│   ├── run-migrations.py                # Thin wrapper → sql-mig run
+│   └── pack-vsix-template.py            # Pack VS project template (this repo only)
 ├── .cursor/
 │   ├── hooks.json                       # afterFileEdit hook for auto-stamping
 │   └── hooks/stamp-migration-id.sh
@@ -350,7 +359,10 @@ CREATE TABLE [dbo].[Person] ( ... );
 
 ## Deploy migrations and tracking
 
-**Path:** `scripts/run-migrations.py`
+**CLI:** `sql-mig run` (shared package)  
+**Wrapper:** `scripts/run-migrations.py`
+
+Shared tooling is installed via `pip install -r requirements.txt` from the separate [`sql-migration-tools`](https://github.com/nakkavamsi/sql-migration-tools) repository. After install you can use either `sql-mig …` or the thin wrappers under `scripts/`.
 
 Applies pending scripts from `Deployments/Migrations/` to a target SQL Server database and records each successful run in `dbo.__MigrationHistory`. The runner keys off the `-- Migration-Id` header in each file (not the filename), so renames do not cause re-execution.
 
@@ -409,19 +421,23 @@ History for that script is stored in the database it ran against.
 Windows integrated auth:
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C
+# Install shared tooling once
+pip install -r requirements.txt
+
+sql-mig run -S localhost -d MyDb -E -C
+# or: python3 scripts/run-migrations.py -S localhost -d MyDb -E -C
 ```
 
 SQL login:
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C
+sql-mig run -S localhost -d MyDb -U sa -P 'YourPassword' -C
 ```
 
 Pre-deployments (manual, optional runner):
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments-only
+sql-mig run -S localhost -d MyDb -U sa -P 'YourPassword' -C --pre-deployments-only
 ```
 
 On Linux/macOS, use `-U`/`-P` (integrated auth `-E` is Windows-only). Prefer the `SQLCMDPASSWORD` environment variable instead of `-P` in CI.
@@ -623,10 +639,11 @@ Steps:
 1. Checkout
 2. Setup .NET 8.0.406
 3. Setup Python 3.x
-4. Validate migration manifest (`--list-files`)
-5. Run `python3 scripts/sync-schema-from-migrations.py`
-6. Run `dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true`
-7. Upload `Databasecode.dacpac` as CI artifact
+4. Install `sql-migration-tools` (`pip install -r requirements.txt`)
+5. Validate migration manifest (`sql-mig run --list-files`)
+6. Run `sql-mig sync`
+7. Run `dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true`
+8. Upload `Databasecode.dacpac` as CI artifact
 
 #### Deploy migrations — `.github/workflows/deploy-migrations.yml`
 
