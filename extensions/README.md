@@ -13,7 +13,7 @@ Packages the **SQL Server Database (Migration-Driven)** project template for Vis
 
 ```powershell
 # From repository root
-python scripts\pack-vsix-template.py
+python extensions\pack-vsix-template.py
 
 cd extensions
 msbuild SqlMigrationDatabaseVsix.sln /p:Configuration=Release
@@ -44,7 +44,7 @@ Restart Visual Studio.
 After changing `templates/SqlMigrationDatabase/`:
 
 ```powershell
-python scripts\pack-vsix-template.py
+python extensions\pack-vsix-template.py
 msbuild extensions\SqlMigrationDatabaseVsix.sln /p:Configuration=Release
 ```
 

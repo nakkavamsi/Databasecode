@@ -8,7 +8,6 @@ for Visual Studio template parameter substitution.
 
 from __future__ import annotations
 
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -94,25 +93,12 @@ def write_vstemplate(target_dir: Path) -> None:
           <ProjectItem ReplaceParameters="false">Deployments\\pre-deployments\\readme.txt</ProjectItem>
         </Folder>
       </Folder>
-      <Folder Name="scripts" TargetFolderName="scripts">
-        <ProjectItem ReplaceParameters="false">scripts\\sync-schema-from-migrations.py</ProjectItem>
-        <ProjectItem ReplaceParameters="false">scripts\\bootstrap-from-baseline.py</ProjectItem>
-        <ProjectItem ReplaceParameters="false">scripts\\migration_id.py</ProjectItem>
-        <ProjectItem ReplaceParameters="false">scripts\\new-migration.py</ProjectItem>
-        <ProjectItem ReplaceParameters="false">scripts\\stamp-migration-id.py</ProjectItem>
-      </Folder>
       <Folder Name="SchemaModel" TargetFolderName="SchemaModel">
         <ProjectItem ReplaceParameters="false">SchemaModel\\.gitkeep</ProjectItem>
       </Folder>
       <Folder Name=".github" TargetFolderName=".github">
         <Folder Name="workflows" TargetFolderName="workflows">
           <ProjectItem ReplaceParameters="true">.github\\workflows\\build.yml</ProjectItem>
-        </Folder>
-      </Folder>
-      <Folder Name=".cursor" TargetFolderName=".cursor">
-        <ProjectItem ReplaceParameters="false">.cursor\\hooks.json</ProjectItem>
-        <Folder Name="hooks" TargetFolderName="hooks">
-          <ProjectItem ReplaceParameters="false">.cursor\\hooks\\stamp-migration-id.sh</ProjectItem>
         </Folder>
       </Folder>
       <ProjectItem ReplaceParameters="true">global.json</ProjectItem>

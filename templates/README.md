@@ -6,10 +6,9 @@ Reusable template for creating new **migration-driven SQL Server database** repo
 
 - `Databasecode.sqlproj` (Microsoft.Build.Sql 2.2.0)
 - `Deployments/Migrations/` + `Deployments/Rollback/`
-- Python sync script → `SchemaModel/` → `.dacpac`
-- Migration-Id scaffolding (`new-migration.py`, auto-stamp on build)
+- `sql-mig sync` → `SchemaModel/` → `.dacpac`
+- Migration-Id scaffolding (`sql-mig new`, auto-stamp on build)
 - GitHub Actions CI
-- Optional Cursor hook for Agent edits
 
 ---
 
@@ -55,7 +54,6 @@ This creates:
 MyCustomerDb/
 ├── MyCustomerDb.sqlproj
 ├── Deployments/Migrations/1.0.0/01_dbo.Sample.sql
-├── scripts/
 ├── SchemaModel/          (populated on first build)
 └── .github/workflows/build.yml
 ```
@@ -93,7 +91,7 @@ A full **VSIX** project is included under `extensions/SqlMigrationDatabaseVsix/`
 ### Build on Windows
 
 ```powershell
-python scripts\pack-vsix-template.py
+python extensions\pack-vsix-template.py
 msbuild extensions\SqlMigrationDatabaseVsix.sln /p:Configuration=Release
 ```
 

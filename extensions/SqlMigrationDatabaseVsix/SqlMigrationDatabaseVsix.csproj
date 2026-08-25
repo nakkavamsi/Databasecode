@@ -19,9 +19,9 @@
   </PropertyGroup>
 
   <Target Name="PackVsixTemplate" BeforeTargets="PrepareForBuild">
-    <Exec Command="python &quot;$(MSBuildProjectDirectory)\..\..\scripts\pack-vsix-template.py&quot;"
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)\..\pack-vsix-template.py&quot;"
           Condition="'$(OS)' == 'Windows_NT'" />
-    <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/../../scripts/pack-vsix-template.py&quot;"
+    <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/../pack-vsix-template.py&quot;"
           Condition="'$(OS)' != 'Windows_NT'" />
   </Target>
 

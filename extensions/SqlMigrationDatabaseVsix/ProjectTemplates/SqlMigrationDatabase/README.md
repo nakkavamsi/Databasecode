@@ -2,23 +2,31 @@
 
 SQL Server database project with **migration-driven schema management**.
 
+Shared tooling lives in the separate [`sql-migration-tools`](https://github.com/nakkavamsi/sql-migration-tools) package (`sql-mig` CLI).
+
 ## Quick start
 
 ```bash
+# Install shared tooling
+pip install -r requirements.txt
+
 # Add a migration
-python3 scripts/new-migration.py --version 1.1.0 --name dbo.MyTable
+sql-mig new --version 1.1.0 --name dbo.MyTable
 
 # Bootstrap from an exported baseline script (brownfield adoption)
-python3 scripts/bootstrap-from-baseline.py --input baseline.sql --version 1.0.0 --sync
+sql-mig bootstrap --input baseline.sql --version 1.0.0 --sync
 
 # Build dacpac (sync runs automatically)
 dotnet build $safeprojectname$.sqlproj --configuration Release /p:NetCoreBuild=true
+
+# Apply pending migrations to a database (requires sqlcmd)
+sql-mig run -S localhost -d MyDb -U sa -P '...' -C --status
 ```
 
 ## Layout
 
 - `Deployments/Migrations/` — source of truth (semver folders)
 - `SchemaModel/` — auto-generated declarative model (do not edit)
-- `scripts/` — sync, bootstrap, and migration-id tooling
+- `requirements.txt` — installs `sql-migration-tools`
 
 See the full documentation in the source template repository README.

@@ -8,7 +8,6 @@ on:
     paths:
       - templates/**
       - extensions/**
-      - scripts/pack-vsix-template.py
   pull_request:
     branches:
       - main
@@ -16,7 +15,6 @@ on:
     paths:
       - templates/**
       - extensions/**
-      - scripts/pack-vsix-template.py
   workflow_dispatch:
 
 jobs:
@@ -33,7 +31,7 @@ jobs:
           python-version: "3.x"
 
       - name: Pack VSIX template
-        run: python scripts/pack-vsix-template.py
+        run: python extensions/pack-vsix-template.py
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2

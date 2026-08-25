@@ -80,16 +80,6 @@ Databasecode/
 ├── requirements.txt               # Installs shared sql-migration-tools (sql-mig CLI)
 ├── Databasecode.sqlproj           # SQL Server SDK project (Microsoft.Build.Sql 2.2.0)
 ├── global.json                    # Pins .NET SDK 8.0.406
-├── scripts/
-│   ├── sync-schema-from-migrations.py   # Thin wrapper → sql-mig sync
-│   ├── bootstrap-from-baseline.py       # Thin wrapper → sql-mig bootstrap
-│   ├── new-migration.py                 # Thin wrapper → sql-mig new
-│   ├── stamp-migration-id.py            # Thin wrapper → sql-mig stamp
-│   ├── run-migrations.py                # Thin wrapper → sql-mig run
-│   └── pack-vsix-template.py            # Pack VS project template (this repo only)
-├── .cursor/
-│   ├── hooks.json                       # afterFileEdit hook for auto-stamping
-│   └── hooks/stamp-migration-id.sh
 ├── Deployments/
 │   ├── Migrations/                # Forward migrations (semver folders)
 │   │   ├── 1.0.0/
@@ -113,7 +103,7 @@ Databasecode/
     └── play/
 ```
 
-**Not compiled into dacpac:** `Deployments/Migrations/**`, `Deployments/Rollback/**`, `scripts/**`
+**Not compiled into dacpac:** `Deployments/Migrations/**`, `Deployments/Rollback/**`
 
 **Build output:** `bin/`, `obj/` (gitignored)
 
@@ -207,7 +197,7 @@ The sync script ignores these comment headers; they are for traceability, auditi
 Creates the semver folder, sequence prefix, unique id, and header automatically:
 
 ```bash
-python3 scripts/new-migration.py --version 2.2.0 --name dbo.person.add_status
+sql-mig new --version 2.2.0 --name dbo.person.add_status
 ```
 
 Generated filename example:
@@ -219,7 +209,7 @@ Deployments/Migrations/2.2.0/01_20260522143000_a3f9b2c1_dbo.person.add_status.sq
 With SQL body:
 
 ```bash
-python3 scripts/new-migration.py \
+sql-mig new \
   --version 2.2.0 \
   --name dbo.person.add_status \
   --content "ALTER TABLE [dbo].[Person] ADD [Status] NVARCHAR(50) NULL;"
@@ -228,20 +218,20 @@ python3 scripts/new-migration.py \
 Preview without writing:
 
 ```bash
-python3 scripts/new-migration.py --version 2.2.0 --name dbo.person.add_status --dry-run
+sql-mig new --version 2.2.0 --name dbo.person.add_status --dry-run
 ```
 
 #### Option 2 — Automatic on build/sync
 
-Every `dotnet build` and `python3 scripts/sync-schema-from-migrations.py` run stamps any migration file under `Deployments/Migrations/` that is still missing a `Migration-Id`. This covers files you create manually in the IDE.
+Every `dotnet build` and `sql-mig sync` run stamps any migration file under `Deployments/Migrations/` that is still missing a `Migration-Id`. This covers files you create manually in the IDE.
 
 #### Option 3 — Cursor hook (Agent edits only)
 
-Project hook `.cursor/hooks.json` runs `stamp-migration-id.sh` after **Agent** file edits (`Write` / `TabWrite`). It does **not** run when you type and save a file yourself — use Option 1, 2, or 4 for manual files.
-
-Make the hook executable once:
+The optional Cursor hook lives in the shared tooling repo ([DBDeploymentTool](https://github.com/nakkavamsi/DBDeploymentTool)). Copy `.cursor/` from that repo into this project if you want Agent writes under `Deployments/Migrations/` stamped automatically. It does **not** run when you type and save a file yourself — use Option 1, 2, or 4 for manual files.
 
 ```bash
+# from a checkout of https://github.com/nakkavamsi/DBDeploymentTool
+cp -R /path/to/DBDeploymentTool/.cursor .
 chmod +x .cursor/hooks/stamp-migration-id.sh
 ```
 
@@ -249,13 +239,13 @@ chmod +x .cursor/hooks/stamp-migration-id.sh
 
 ```bash
 # One file
-python3 scripts/stamp-migration-id.py Deployments/Migrations/2.2.0/01_dbo.person.add_status.sql
+sql-mig stamp Deployments/Migrations/2.2.0/01_dbo.person.add_status.sql
 
 # All migrations missing an id
-python3 scripts/stamp-migration-id.py --all
+sql-mig stamp --all
 
 # Normalize headers to Migration-Id only
-python3 scripts/stamp-migration-id.py --all --refresh
+sql-mig stamp --all --refresh
 ```
 
 **Id format:** `YYYYMMDDHHMMSS_<8-hex>` (UTC timestamp + random suffix).
@@ -359,10 +349,9 @@ CREATE TABLE [dbo].[Person] ( ... );
 
 ## Deploy migrations and tracking
 
-**CLI:** `sql-mig run` (shared package)  
-**Wrapper:** `scripts/run-migrations.py`
+**CLI:** `sql-mig run` (shared package)
 
-Shared tooling is installed via `pip install -r requirements.txt` from the separate [`sql-migration-tools`](https://github.com/nakkavamsi/sql-migration-tools) repository. After install you can use either `sql-mig …` or the thin wrappers under `scripts/`.
+Shared tooling is installed via `pip install -r requirements.txt` from the separate [`sql-migration-tools`](https://github.com/nakkavamsi/sql-migration-tools) repository. After install, use `sql-mig …`.
 
 Applies pending scripts from `Deployments/Migrations/` to a target SQL Server database and records each successful run in `dbo.__MigrationHistory`. The runner keys off the `-- Migration-Id` header in each file (not the filename), so renames do not cause re-execution.
 
@@ -392,11 +381,11 @@ Pre-deployment scripts are tracked in `dbo.__PreDeploymentHistory`:
 
 ```
 1. Deployments/pre-deployments/   (manual: CREATE DATABASE, logins, users)
-2. scripts/run-migrations.py      (schema migrations)
+2. sql-mig run                    (schema migrations)
 3. sqlpackage Publish             (optional: declarative reconcile via dacpac)
 ```
 
-Pre-deployment scripts live in `Deployments/pre-deployments/**/*.sql`. They are **manual only** — not run by CI and not included in the dacpac. Optionally, `scripts/run-migrations.py --pre-deployments-only` can apply and track them in `dbo.__PreDeploymentHistory` when you run locally. Migrations use `dbo.__MigrationHistory` (keyed by `-- Migration-Id`).
+Pre-deployment scripts live in `Deployments/pre-deployments/**/*.sql`. They are **manual only** — not run by CI and not included in the dacpac. Optionally, `sql-mig run --pre-deployments-only` can apply and track them in `dbo.__PreDeploymentHistory` when you run locally. Migrations use `dbo.__MigrationHistory` (keyed by `-- Migration-Id`).
 
 Use migrations for versioned, incremental rollout. Use dacpac publish when you want SqlPackage to diff the full declarative model against the database.
 
@@ -425,7 +414,6 @@ Windows integrated auth:
 pip install -r requirements.txt
 
 sql-mig run -S localhost -d MyDb -E -C
-# or: python3 scripts/run-migrations.py -S localhost -d MyDb -E -C
 ```
 
 SQL login:
@@ -445,29 +433,29 @@ On Linux/macOS, use `-U`/`-P` (integrated auth `-E` is Windows-only). Prefer the
 ### Check status (applied vs pending)
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --status
+sql-mig run -S localhost -d MyDb -E -C --status
 ```
 
 ### Preview without executing
 
 ```bash
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --dry-run
+sql-mig run -S localhost -d MyDb -E -C --dry-run
 ```
 
 ### List migration files (offline)
 
 ```bash
-python3 scripts/run-migrations.py --list-files
+sql-mig run --list-files
 ```
 
 ### Optional filters
 
 ```bash
 # Skip test-only version folders
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --exclude-version 9.9.9
+sql-mig run -S localhost -d MyDb -E -C --exclude-version 9.9.9
 
 # Apply only through 2.2.0
-python3 scripts/run-migrations.py -S localhost -d MyDb -E -C --up-to-version 2.2.0
+sql-mig run -S localhost -d MyDb -E -C --up-to-version 2.2.0
 ```
 
 ### Query history directly
@@ -482,7 +470,7 @@ ORDER BY [AppliedUtc];
 
 ## Schema sync script
 
-**Path:** `scripts/sync-schema-from-migrations.py`
+**CLI:** `sql-mig sync`
 
 ### What it does
 
@@ -496,7 +484,7 @@ ORDER BY [AppliedUtc];
 ### Run manually
 
 ```bash
-python3 scripts/sync-schema-from-migrations.py
+sql-mig sync
 ```
 
 ### Output normalization
@@ -610,7 +598,7 @@ Drops objects in dependency-safe order (triggers → synonyms → procedures →
 
 ```bash
 # Sync + build (sync also runs automatically via MSBuild target)
-python3 scripts/sync-schema-from-migrations.py
+sql-mig sync
 dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
 ```
 
@@ -746,10 +734,10 @@ Script the resulting `.dacpac` to a single `.sql` file (SSMS or SqlPackage `/Act
 
 ### 2. Bootstrap migration files
 
-**Path:** `scripts/bootstrap-from-baseline.py`
+**CLI:** `sql-mig bootstrap`
 
 ```bash
-python3 scripts/bootstrap-from-baseline.py \
+sql-mig bootstrap \
   --input baseline.sql \
   --version 1.0.0 \
   --sync
@@ -759,10 +747,10 @@ python3 scripts/bootstrap-from-baseline.py \
 |------|---------|
 | `--input` | Baseline schema SQL file (required) |
 | `--version` | Target semver folder under `Deployments/Migrations/` (required) |
-| `--sync` | Run `sync-schema-from-migrations.py` after writing files |
+| `--sync` | Run `sql-mig sync` after writing files |
 | `--dry-run` | Print planned migration files without writing |
 | `--force` | Delete existing `.sql` files in the target version folder first |
-| `--project-root` | Repository root (defaults to parent of `scripts/`) |
+| `--project-root` | Repository root (defaults to the current directory) |
 
 The script:
 
@@ -789,7 +777,7 @@ Deployments/Migrations/1.0.0/
 ### 3. Review, sync, and build
 
 ```bash
-python3 scripts/sync-schema-from-migrations.py
+sql-mig sync
 dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
 ```
 
@@ -958,7 +946,7 @@ Build and install a **Visual Studio 2022** extension that adds the template to *
 
 ```powershell
 # Windows + Visual Studio 2022
-python scripts\pack-vsix-template.py
+python extensions\pack-vsix-template.py
 msbuild extensions\SqlMigrationDatabaseVsix.sln /p:Configuration=Release
 # Install: extensions\SqlMigrationDatabaseVsix\bin\Release\SqlMigrationDatabaseVsix.vsix
 ```
@@ -971,7 +959,7 @@ Details: [extensions/README.md](extensions/README.md)
 
 ```bash
 # Regenerate SchemaModel from migrations
-python3 scripts/sync-schema-from-migrations.py
+sql-mig sync
 
 # Full local build
 dotnet build Databasecode.sqlproj --configuration Release /p:NetCoreBuild=true
