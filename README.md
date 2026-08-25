@@ -926,32 +926,18 @@ Or download from https://dotnet.microsoft.com/download
 
 ## Reuse as a template for new database repos
 
-This repository includes a **dotnet / Visual Studio 2022** project template.
+Project templates (`dotnet new` and Visual Studio VSIX) live in the shared tooling repo:
+
+- https://github.com/nakkavamsi/DBDeploymentTool (`templates/`, `extensions/`)
 
 ```bash
-# One-time install (from this repo)
+git clone https://github.com/nakkavamsi/DBDeploymentTool.git
+cd DBDeploymentTool
 dotnet new install ./templates/SqlMigrationDatabase
-
-# Create a new database repo
 dotnet new sql-migration-db -n MyNewDb -o ../MyNewDb
 ```
 
-In **Visual Studio 2022**: restart VS after install, then **Create a new project** → search **SQL Server Database (Migration-Driven)**.
-
-Full instructions: [templates/README.md](templates/README.md)
-
-### Visual Studio VSIX extension
-
-Build and install a **Visual Studio 2022** extension that adds the template to **File → New → Project**:
-
-```powershell
-# Windows + Visual Studio 2022
-python extensions\pack-vsix-template.py
-msbuild extensions\SqlMigrationDatabaseVsix.sln /p:Configuration=Release
-# Install: extensions\SqlMigrationDatabaseVsix\bin\Release\SqlMigrationDatabaseVsix.vsix
-```
-
-Details: [extensions/README.md](extensions/README.md)
+Details: [templates/README.md](https://github.com/nakkavamsi/DBDeploymentTool/blob/dbtoolsenhancement/templates/README.md) and [extensions/README.md](https://github.com/nakkavamsi/DBDeploymentTool/blob/dbtoolsenhancement/extensions/README.md).
 
 ---
 
